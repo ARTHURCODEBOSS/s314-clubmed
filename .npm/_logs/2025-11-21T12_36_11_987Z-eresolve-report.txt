@@ -1,0 +1,22 @@
+'Log files:
+/home/s314-clubmed/.npm/_logs/2025-11-21T12_36_11_987Z-debug-0.log
+
+# npm resolution error report
+
+While resolving: clubmed-vue@0.0.0
+Found: @vitejs/plugin-vue@6.0.2
+node_modules/@vitejs/plugin-vue
+  dev @vitejs/plugin-vue@"^5.0.0" from the root project
+
+Could not resolve dependency:
+dev @vitejs/plugin-vue@"^5.0.0" from the root project
+
+Conflicting peer dependency: vite@5.4.21
+node_modules/vite
+  peer vite@"^5.0.0 || ^6.0.0" from @vitejs/plugin-vue@5.2.4
+  node_modules/@vitejs/plugin-vue
+    dev @vitejs/plugin-vue@"^5.0.0" from the root project
+
+Fix the upstream dependency conflict, or retry
+this command with --force or --legacy-peer-deps
+to accept an incorrect (and potentially broken) dependency resolution.

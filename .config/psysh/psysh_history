@@ -1,0 +1,3 @@
+_HiStOrY_V2_
+config('mail.mailers.smtp.password');
+Hash::make('p')
