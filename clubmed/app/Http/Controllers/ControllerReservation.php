@@ -5,17 +5,98 @@ use Illuminate\Support\Str;
 
 use Illuminate\Http\Request;
 use App\Models\Reservation;
+use App\Models\Activite;
 use Illuminate\Support\Facades\Route;
 use App\Models\AutreVoyageur;
 use App\Models\Transport;
+use App\Models\Transaction;
 use App\Models\Se_Lie_A;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\DB;
 use App\Models\ConfirmationMail;
 use App\Http\Controllers\ControllerCarte;
 
 class ControllerReservation extends Controller
 {
+    public function GetAllReservation()
+    {
+        $reservations = Reservation::with([
+                'client', 
+                'club.categorie',
+                'club.pays',
+                'activites',
+            ])
+            ->orderBy('datedebut', 'desc')
+            ->get();
+        $reservations->each(function ($reservation) {
+            if ($reservation->activites) {
+                $reservation->activites->each(function ($activite) {
+                    $activite->pivot->disponibilite_confirmee = (bool) $activite->pivot->disponibilite_confirmee;
+                });
+            }
+
+            
+       
+            if ($reservation->club && $reservation->club->categorie->isNotEmpty()) {
+                $reservation->club->idcategorie = $reservation->club->categorie->first()->numcategory;
+            }
+        });
     
+        return response()->json($reservations, 200);
+    }
+
+    public function refuserProposition(Request $request, $numreservation)
+{
+    
+    
+
+    try {
+        
+        $reservation = Reservation::findOrFail($numreservation);
+
+        
+        if ($reservation->statut !== 'PROPOSITION_EN_COURS') {
+            return response()->json([
+                'error' => 'Action impossible. La réservation n\'est pas en attente de modification.'
+            ], 400);
+        }
+
+        
+        $montantARembourser = Transaction::where('numreservation', $numreservation)
+            ->where('statut_paiement', 'SUCCES')
+            ->sum('montant');
+
+        
+        if ($montantARembourser > 0) {
+            Transaction::create([
+                'numreservation' => $numreservation,
+                'montant'        => -$montantARembourser,
+                'date_transaction' => now(),
+                'moyen_paiement' => 'VIREMENT', 
+                'statut_paiement'=> 'REMBOURSE' 
+            ]);
+            $reservation->statut = 'REMBOURSE';
+            $reservation->save();
+        } 
+        else
+        {
+            
+            $reservation->statut = 'ANNULEE';
+            $reservation->save();
+        }
+
+        
+
+        return response()->json([
+            'message' => 'Proposition refusée. Commande annulée et client remboursé.',
+            'montant_rembourse' => $montantARembourser
+        ], 200);
+
+    } catch (\Exception $e) {
+        
+        return response()->json(['error' => 'Erreur technique : ' . $e->getMessage()], 500);
+    }
+}
     public function PostReservation(Request $request)
     {
 
@@ -65,73 +146,83 @@ class ControllerReservation extends Controller
         ]);
        
         try {
-            $token = Str::random(60);
+            $tokenReservation = Str::random(60);
             $urlFrontEnd = "http://51.83.36.122:8045";
-            $lien= $urlFrontEnd . "/partenaire/validation?token=" . $token;
-            Mail::to($email)->queue(new ConfirmationMail($reservation,null, $lien));
+            $lien= $urlFrontEnd . "/validation?token=" .  $tokenReservation;
+            Mail::to($email)->queue(new ConfirmationMail($reservation, null, $lien));
+
             foreach($activites as $act){
-                Mail::to($act->partenaire->email)->queue(new ConfirmationMail($reservation,$act));
+                $tokenActivite = Str::random(60);
+                $urlFrontEndActivite = "http://51.83.36.122:8045";
+                $lienActivite = $urlFrontEndActivite . "/validation?token=" . $tokenActivite;
+                if($act->partenaire && $act->partenaire->email){
+                    Mail::to($act->partenaire->email)->queue(new ConfirmationMail($reservation,$act,$lienActivite));
+                    DB::table('se_lie_a')->where('numreservation', $numreservation)->where('idactivite', $act->idactivite)->update(['token' => $tokenActivite]);
+                }
             }
-            $reservation->token_partenaire = $token;
-            $reservation->mail = true;
-            $reservation->save();
+            $reservation->token_partenaire =  $tokenReservation;
+            $reservation->mail = true; 
+            Reservation::where('numreservation', $numreservation)->update([
+            'token_partenaire' => $tokenReservation,
+            'mail' => true
+        ]);
             return response()->json(['message' => 'Mail Envoyée'], 200);
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
     public function VerificationToken($token){
-        $reservation = Reservation::where('token_partenaire', $token)
-                                  ->with(['client', 'club']) 
-                                  ->first();
-        if (!$reservation){
-           return responce()->json(['message' => 'Token Non Valide'], 404);
+        $reservation = Reservation::where('token_partenaire', $token)->with(['client'])->first();
+        if ($reservation){
+            return response()->json([ 'type' => 'reservation' ,'data' => $reservation], 200);;
         }
-         return responce()->json(['message' => 'Token Valide'], 200);
+        $check = DB::table('se_lie_a')->where('token', $token)->first();
+        if($check){
+            $reservationE = Reservation::where('numreservation', $check->numreservation)->with(['client'])->first();
+            return response()->json(['type' => 'partenaire', 'data' => $reservationE], 200);
+        }
+        return response()->json(['message' => 'Token Non Valide'], 404);
     }
 
-    
-
-    public function GetAllReservation()
-    {
-        \Log::info('🚀 DÉBUT GetAllReservation');
-        
-        $reservations = Reservation::with([
-                'client', 
-                'club', 
-                'club.categorie', 
-                'club.pays',
-                'activites' => function ($query) {
-                    $query->withPivot(['disponibilite_confirmee', 'nbpersonnes']); 
-                }      
-            ])
-            ->orderBy('datedebut', 'desc')
-            ->get();
-            
-        \Log::info('📊 Nombre de réservations: ' . $reservations->count());
-            
-        // 🔥 TRANSFORMATION EXPLICITE pour PostgreSQL
-        $reservations->each(function ($reservation) {
-            \Log::info("📦 Réservation #{$reservation->numreservation} - Nb activités: " . $reservation->activites->count());
-            
-            if ($reservation->activites && $reservation->activites->count() > 0) {
-                $reservation->activites->each(function ($activite) {
-                    $valeurBrute = $activite->pivot->disponibilite_confirmee;
-                    \Log::info("🔍 Activité #{$activite->idactivite} - Valeur brute: " . var_export($valeurBrute, true) . " (type: " . gettype($valeurBrute) . ")");
-                    
-                    // Force la conversion en vrai booléen PHP
-                    $activite->pivot->disponibilite_confirmee = (bool) $valeurBrute;
-                    
-                    \Log::info("✅ Activité #{$activite->idactivite} - Après conversion: " . var_export($activite->pivot->disponibilite_confirmee, true));
-                });
+    public function ReponseReservation(Request $request){
+        try{
+            $token = $request->token;
+            $reservation = Reservation::where('token_partenaire', $token)->first();
+            if($reservation){
+                Reservation::where('numreservation', $reservation->numreservation)->update([
+                    'token_partenaire' => null,
+                    'statut' => $request->statut
+                ]);
             }
-        });
-    
-        \Log::info('🏁 FIN GetAllReservation');
-    
-        return response()->json($reservations, 200);
+        }
+        catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+        
     }
-
+    public function ReponsePartenaire(Request $request){
+        try{
+            $check = DB::table('se_lie_a')->where('token', $request->token)->first();
+            if($check){
+                if ($request->statut == 'CONFIRME'){
+                    $statut = true;
+                }
+                else{
+                    $statut = false;
+                }
+                DB::table('se_lie_a')->where('token', $request->token)->update([
+                    'disponibilite_confirmee' => $statut,
+                    'token' => null
+                ]);
+                }
+        }
+            
+        
+        catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+        
+    }
     public function GetAllReservationById()
     {
         $userId = auth()->id();

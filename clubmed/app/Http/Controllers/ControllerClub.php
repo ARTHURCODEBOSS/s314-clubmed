@@ -12,21 +12,138 @@ use App\Models\ClubStation;
 use Illuminate\Http\Request;
 use App\Models\ActiviteEnfant;
 use App\Models\Trancheage;
-// use App\Models\Regroupement;
+use App\Models\PrixPeriode;
 
 class ControllerClub extends Controller
 {
     public function GetAllActivite($idClub)
     {
-        $activite = Club::with('activites')->find($idClub);
+        $activite = Club::where('statut_mise_en_ligne', 'PUBLIE')
+                    ->with('activites')
+                    ->find($idClub);
         return response()->json($activite, 200);
+    }
+    
+    public function getClubsEnAttente()
+    {
+        
+        $clubs = Club::where('statut_mise_en_ligne', 'EN_CREATION')
+                     ->with('typeChambres')
+                     ->get();
+
+        $data = $clubs->map(function ($club) {
+                        $clubArray = $club->toArray();
+            
+                        
+        $clubArray['types_chambres_uniques'] = $club->typeChambres->toArray();
+                        
+            return $clubArray;
+        });
+            
+        return response()->json($data);
+    }
+    public function getPeriodes()
+    {
+        return response()->json(Periode::all());
+    }
+    public function validerEtTarifer(Request $request, $idclub)
+    {
+        
+        $tarifs = $request->input('tarifs');
+
+        
+        $club = Club::findOrFail($idclub);
+
+        try {
+            foreach ($tarifs as $tarif) {
+                PrixPeriode::updateOrCreate(
+                    [
+                        'numperiode' => $tarif['numperiode'],
+                        'idtypechambre' => $tarif['idtypechambre']
+                    ],
+                    [
+                        'prixperiode' => $tarif['prix']
+                    ]
+                );
+            }
+
+            
+            $club->statut_mise_en_ligne = 'PUBLIE';
+            $club->save();
+
+            return response()->json(['message' => 'Tarifs enregistrés et Club publié !']);
+
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Erreur technique : ' . $e->getMessage()], 500);
+        }
+    }
+    public function getClubsByCategorie($idcategorie)
+    {
+        
+        $clubs = Club::with([
+            'activites.adulte.typeactivite',
+            'activites.enfant.trancheage',
+            'photo',
+            'photosGalerie',
+            'chambres.typeChambre.prixPeriodes',
+            'categorie',
+            'pays'
+        ])
+        ->whereHas('categorie', function ($query) use ($idcategorie) {
+            $query->where('categorie.numcategory', $idcategorie);
+        })
+        ->where('statut_mise_en_ligne', 'PUBLIE')
+        ->get();
+    
+        if ($clubs->isEmpty()) {
+            return response()->json([], 200);
+        }
+                
+        $periodes = Periode::all();
+        $aujourdhui = date('Y-m-d');
+        $periodeActuel = null;
+                
+        foreach ($periodes as $periode) {
+            if ($periode->datedeb <= $aujourdhui && $periode->datefin >= $aujourdhui) {
+                $periodeActuel = $periode;
+                break;
+            }
+        }
+                
+        if (!$periodeActuel) {
+            foreach ($clubs as $c) $c->prix = "Fermé";
+            return response()->json($clubs, 200);
+        }
+    
+        foreach ($clubs as $club) {
+            $prixMinTrouve = null;
+            
+            foreach ($club->chambres as $chambre) {
+                $type = $chambre->typeChambre ?? null;
+                
+                if ($type) {
+                    $les_prix = $type->prixPeriodes ?? [];
+                    
+                    foreach ($les_prix as $prix_periode) {
+                        if ($prix_periode->numperiode == $periodeActuel->numperiode) {
+                            if ($prixMinTrouve === null || $prix_periode->prixperiode < $prixMinTrouve) {
+                                $prixMinTrouve = $prix_periode->prixperiode;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            $club->prix = ($prixMinTrouve === null) ? "Indisp." : floatval($prixMinTrouve) . " €";
+        } 
+            
+        return response()->json($clubs, 200);
     }
     
     
     
-    
     public function GetClub($idClub)
-{
+    {
         $club = Club::with([
             'activites.adulte.typeactivite',
             'activites.enfant.trancheage',
@@ -42,7 +159,9 @@ class ControllerClub extends Controller
             'activites.enfant.trancheage',
             'activites.adulte.typeactivite.photo', 
             
-        ])->find($idClub);
+        ])
+        ->where('statut_mise_en_ligne', 'PUBLIE')
+        ->find($idClub);
 
         
         
@@ -60,15 +179,27 @@ class ControllerClub extends Controller
             'lieurestauration',
             'avis',
             'clubstation.station'
-        ])->findOrFail($id);
+        ])
+        ->where('statut_mise_en_ligne', 'PUBLIE')
+        ->findOrFail($id);
         
         return response()->json($club);
     }
     
     public function GetAllClub()
     {
-        $clubs = Club::with([
-            'activites.adulte.typeactivite', 'activites.enfant.trancheage','photo','photosGalerie','chambres.typeChambre.prixPeriodes','categorie','pays','stations'])->get();
+        $clubs = Club::where('statut_mise_en_ligne', 'PUBLIE')
+        ->with([
+            'activites.adulte.typeactivite', 
+            'activites.enfant.trancheage',
+            'photo',
+            'photosGalerie',
+            'chambres.typeChambre.prixPeriodes',
+            'categorie',
+            'pays',
+            'stations'
+        ])
+        ->get();
         
         if ($clubs->isEmpty()) {
             return response()->json([], 200);
@@ -174,6 +305,7 @@ class ControllerClub extends Controller
             'activites.adulte.typeactivite',
             'activites.enfant.trancheage','photo', 'photosGalerie', 'chambres.typeChambre.prixPeriodes','pays'])
                      ->where('numpays', $idPays)
+                     ->where('statut_mise_en_ligne', 'PUBLIE')
                      ->get();
 
         if ($clubs->isEmpty()) {
@@ -260,6 +392,7 @@ class ControllerClub extends Controller
             'activites.adulte.typeactivite',
             'activites.enfant.trancheage','photo','photosGalerie','chambres.typeChambre.prixPeriodes','pays'])
                      ->whereIn('numpays', $idsPays) 
+                     ->where('statut_mise_en_ligne', 'PUBLIE')
                      ->get();
         
 
@@ -346,6 +479,7 @@ class ControllerClub extends Controller
         ->whereHas('regroupements', function ($query) use ($numRegroupement) {
             $query->where('regroupement.numregroupement', $numRegroupement);
         })
+        ->where('statut_mise_en_ligne', 'PUBLIE')
         ->get();
 
         if ($clubs->isEmpty()) {
@@ -397,7 +531,7 @@ class ControllerClub extends Controller
      */
     public function getPrixMinByIdClub($idclub)
     {
-        $club = Club::with('chambres.typeChambre.prixPeriodes')->find($idclub);
+        $club = Club::with('chambres.typeChambre.prixPeriodes')->where('statut_mise_en_ligne', 'PUBLIE')->find($idclub);
         
         if (!$club) {
             return response()->json("Indisp.", 200);

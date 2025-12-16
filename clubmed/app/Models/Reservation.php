@@ -34,6 +34,7 @@ class Reservation extends Model
     ];
 
     protected $casts = [
+        'numreservation' => 'integer',
         'mail' => 'boolean',
         'disponibilite_confirmee' => 'boolean',
 
@@ -67,13 +68,15 @@ class Reservation extends Model
     public function activites()
     {
         return $this->belongsToMany(
-            Activite::class,           // Le modèle lié
-            'se_lie_a',                // 🔥 TON VRAI NOM DE TABLE (en minuscules)
-            'numreservation',          // 🔥 Clé étrangère de Reservation
-            'idactivite'               // 🔥 Clé étrangère de Activite
-        )->withPivot([
-            'disponibilite_confirmee', // 🔥 Le champ qu'on modifie
-            'nbpersonnes'
+            Activite::class,         
+            'se_lie_a',               
+            'numreservation',          
+            'idactivite'              
+        )
+        ->withPivot([
+            'disponibilite_confirmee', 
+            'nbpersonnes',
+            'token'
         ]);
     
     }

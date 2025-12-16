@@ -44,7 +44,10 @@ class Club extends Model
             'numrestauration'
         );
     }
-
+    public function typeChambres()
+    {
+        return $this->hasMany(TypeChambre::class, 'idclub', 'idclub');
+    }
     public function chambres()
     {
         return $this->belongsToMany(
@@ -69,10 +72,7 @@ class Club extends Model
         return $this->belongsToMany(Regroupement::class, 'converge_vers', 'idclub', 'numregroupement');
     }
 
-    public function type_chambre()
-    {
-
-    }
+    
     public function pays()
     {
         return $this->belongsTo(Souslocalisation::class, 'numpays', 'numpays');
@@ -102,4 +102,5 @@ class Club extends Model
             'idactivite'   
         );
     }
+
 }

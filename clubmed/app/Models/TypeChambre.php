@@ -15,10 +15,14 @@ class TypeChambre extends Model
     {
         return $this->belongsTo(Photo::class, 'numphoto', 'numphoto');
     }
-     
+    public function club()
+    {
+        return $this->belongsTo(Club::class, 'idclub', 'idclub');
+    }
     public function prixPeriodes()
     {
         return $this->hasMany(PrixPeriode::class, 'idtypechambre', 'idtypechambre');
     }
+    
 }
 

@@ -32,6 +32,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/reservationsById', [ControllerReservation::class, 'GetAllReservationById']);
 });
 Route::get('/verif-token/{token}', [ControllerReservation::class, 'VerificationToken']);
+Route::post('/reponse', [ControllerReservation::class, 'ReponseReservation']);
+Route::post('/reponse-partenaire', [ControllerReservation::class, 'ReponsePartenaire']);
 Route::Get('/reservations', [ControllerReservation::class, 'GetAllReservation']);
 Route::Get("/chambres ",[ControllerChambre::class, "GetAllChambre" ]);
 Route::Get("/utilisateurs ",[ControllerUtilisateur::class, "GetAllUtilisateur" ]);
@@ -67,5 +69,10 @@ Route::Get('/transports', [ControllerReservation::class, 'getTransport']);
 Route::Post('/PostReservationActivite', [ControllerReservation::class, 'PostReservationActivite']);
 Route::put('/reservations/{numreservation}/disponibilite', [ControllerReservation::class, 'updateDisponibilite']);
 Route::put('/reservations/{numreservation}/activites/{idactivite}/disponibilite', [ControllerReservation::class, 'updateDisponibiliteActivite']);
-
+Route::middleware(['auth:sanctum', 'is_vente'])->group(function () {
+    Route::post('/reservation/{numreservation}/refuser-proposition', [ControllerReservation::class, 'refuserProposition']);
+});
+Route::get('/getClubsEnAttente', [ControllerClub::class, 'getClubsEnAttente']);
+Route::get('/getPeriodes', [ControllerClub::class, 'getPeriodes']);
+Route::post('/validerEtTarifer/{idclub}', [ControllerClub::class, 'validerEtTarifer']);
 
